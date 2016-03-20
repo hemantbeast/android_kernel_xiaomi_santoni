@@ -114,6 +114,7 @@ obj-$(CONFIG_QCOM_SMCINVOKE) += smcinvoke.o
 obj-$(CONFIG_QCOM_EARLY_RANDOM)	+= early_random.o
 obj-$(CONFIG_MSM_HAB) += hab/
 obj-$(CONFIG_QCOM_QDSS_BRIDGE) += qdss_bridge.o
+obj-$(CONFIG_STATE_NOTIFIER) += state_notifier.o
 
 ifeq ($(CONFIG_ANDROID),y)
 CFLAGS_rpm_stats.o += -DCONFIG_DEBUG_FS
