@@ -5452,7 +5452,6 @@ static irqreturn_t fg_soc_irq_handler(int irq, void *_chip)
 
 	return IRQ_HANDLED;
 }
-
 static irqreturn_t fg_empty_soc_irq_handler(int irq, void *_chip)
 {
 	struct fg_chip *chip = _chip;
