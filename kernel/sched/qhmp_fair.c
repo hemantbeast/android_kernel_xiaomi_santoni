@@ -4974,6 +4974,12 @@ void relay_gfs(unsigned int gfs)
 	Lgentle_fair_sleepers = gfs;
 }
 
+static unsigned int Larch_power = 0;
+void relay_ap(unsigned int ap)
+{
+	Larch_power = ap;
+}
+
 static void
 place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 {
@@ -8179,7 +8185,7 @@ static void update_cpu_capacity(struct sched_domain *sd, int cpu)
 	unsigned long capacity = SCHED_CAPACITY_SCALE;
 	struct sched_group *sdg = sd->groups;
 
-	if (sched_feat(ARCH_CAPACITY))
+	if (Larch_power)
 		capacity *= arch_scale_cpu_capacity(sd, cpu);
 	else
 		capacity *= default_scale_cpu_capacity(sd, cpu);
@@ -8188,7 +8194,7 @@ static void update_cpu_capacity(struct sched_domain *sd, int cpu)
 
 	sdg->sgc->capacity_orig = capacity;
 
-	if (sched_feat(ARCH_CAPACITY))
+	if (Larch_power)
 		capacity *= arch_scale_freq_capacity(sd, cpu);
 	else
 		capacity *= default_scale_capacity(sd, cpu);
