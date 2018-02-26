@@ -2109,6 +2109,10 @@ unsigned long shrink_slab(struct shrink_control *shrink,
 			  unsigned long nr_pages_scanned,
 			  unsigned long lru_pages);
 
+#ifdef CONFIG_DROP_PAGE_CACHE_SUSPEND
+void drop_pagecache(void);
+#endif
+
 #ifndef CONFIG_MMU
 #define randomize_va_space 0
 #else
