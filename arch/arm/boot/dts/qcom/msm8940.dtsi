@@ -568,6 +568,7 @@
 
 	qcom,restrict-pwrlevel = <1>;
 	/delete-property/qcom,gpu-speed-bin;
+	/delete-property/qcom,gpu-quirk-lmloadkill-disable;
 	qcom,gpu-speed-bin = <0x0174 0x80000000 31>;
 
 	/delete-property/qcom,initial-pwrlevel;
