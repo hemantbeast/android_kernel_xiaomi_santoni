@@ -1459,10 +1459,7 @@ static int ngd_notify_slaves(void *data)
 	}
 
 	while (!kthread_should_stop()) {
-<<<<<<< HEAD
-=======
 		set_current_state(TASK_INTERRUPTIBLE);
->>>>>>> 14b4e64... msm: Fix high load average from uninterruptible waits
 		wait_for_completion_interruptible(&dev->qmi.slave_notify);
 		/* Probe devices for first notification */
 		if (!i) {
