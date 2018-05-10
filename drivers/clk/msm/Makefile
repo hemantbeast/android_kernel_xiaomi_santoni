@@ -13,15 +13,20 @@ obj-$(CONFIG_MSM_CLK_CONTROLLER_V2)	+= msm-clock-controller.o
 obj-$(CONFIG_DEBUG_FS)		+= clock-debug.o
 
 # MSM 8996
-obj-$(CONFIG_ARCH_MSM8996)	+= clock-gcc-8996.o
-obj-$(CONFIG_ARCH_MSM8996)	+= clock-mmss-8996.o
-obj-$(CONFIG_ARCH_MSM8996)	+= clock-cpu-8996.o
-obj-$(CONFIG_ARCH_MSMCOBALT)	+= clock-osm.o
+obj-$(CONFIG_ARCH_MSM8996)      += clock-gcc-8996.o
+obj-$(CONFIG_ARCH_MSM8996)      += clock-mmss-8996.o
+obj-$(CONFIG_ARCH_MSM8996)      += clock-cpu-8996.o
+obj-$(CONFIG_ARCH_MSMCOBALT)    += clock-osm.o
+CFLAGS_clock-gcc-8996.o         += $(call cc-disable-warning,literal-conversion)
+CFLAGS_clock-mmss-8996.o        += $(call cc-disable-warning,literal-conversion)
 
 # MSM COBALT
 obj-$(CONFIG_ARCH_MSMCOBALT)	+= clock-gcc-cobalt.o
 obj-$(CONFIG_ARCH_MSMCOBALT)	+= clock-gpu-cobalt.o
 obj-$(CONFIG_ARCH_MSMCOBALT)	+= clock-mmss-cobalt.o
+
+# MDM9640
+obj-$(CONFIG_ARCH_MDM9640)	+= clock-a7.o
 
 # MDM9650
 obj-$(CONFIG_ARCH_MDM9650)	+= clock-gcc-9650.o
