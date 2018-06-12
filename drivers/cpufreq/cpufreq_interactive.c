@@ -31,7 +31,6 @@
 #include <linux/workqueue.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
-#include <linux/fb.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/cpufreq_interactive.h>
@@ -84,34 +83,6 @@ static int migration_register_count;
 static struct mutex sched_lock;
 static cpumask_t controlled_cpus;
 
-static struct notifier_block fb_notif;
-static bool display_on = true;
-
-static int fb_notifier_callback(struct notifier_block *self,
-			unsigned long event, void *data)
-{
-	struct fb_event *evdata = data;
-	int *blank;
-
-	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
-		blank = evdata->data;
-		switch (*blank) {
-			case FB_BLANK_UNBLANK:
-				/* display on */
-				display_on = true;
-				break;
-			case FB_BLANK_POWERDOWN:
-			case FB_BLANK_HSYNC_SUSPEND:
-			case FB_BLANK_VSYNC_SUSPEND:
-			case FB_BLANK_NORMAL:
-				/* display off */
-				display_on = false;
-				break;
-		}
-	}
-	return 0;
-}
-
 /* Target load.  Lower values result in higher CPU speeds. */
 #define DEFAULT_TARGET_LOAD 90
 static unsigned int default_target_loads[] = {DEFAULT_TARGET_LOAD};
@@ -143,8 +114,6 @@ struct cpufreq_interactive_tunables {
 	 * The sample rate of the timer used to increase frequency
 	 */
 	unsigned long timer_rate;
-	unsigned long prev_timer_rate;
-	unsigned long sleep_timer_rate;
 	/*
 	 * Wait this long before raising speed above hispeed, by default a
 	 * single timer interval.
@@ -533,17 +502,6 @@ static void cpufreq_interactive_timer(unsigned long data)
 	ppol->notif_pending = false;
 	now = ktime_to_us(ktime_get());
 	ppol->last_evaluated_jiffy = get_jiffies_64();
-
-	if (display_on
-		&& tunables->timer_rate != tunables->prev_timer_rate)
-		tunables->timer_rate = tunables->prev_timer_rate;
-	else if (!display_on
-		&& tunables->timer_rate != tunables->sleep_timer_rate) {
-		tunables->prev_timer_rate = tunables->timer_rate;
-		tunables->timer_rate
-			= max(tunables->timer_rate,
-				tunables->sleep_timer_rate);
-	}
 
 	if (tunables->use_sched_load)
 		sched_get_cpus_busy(sl, ppol->policy->cpus);
@@ -1169,8 +1127,7 @@ static ssize_t store_timer_rate(struct cpufreq_interactive_tunables *tunables,
 		pr_warn("timer_rate not aligned to jiffy. Rounded up to %lu\n",
 			val_round);
 	tunables->timer_rate = val_round;
-	tunables->prev_timer_rate = val_round;
-
+	
 	if (!tunables->use_sched_load)
 		return count;
 
@@ -1178,38 +1135,10 @@ static ssize_t store_timer_rate(struct cpufreq_interactive_tunables *tunables,
 		if (!per_cpu(polinfo, cpu))
 			continue;
 		t = per_cpu(polinfo, cpu)->cached_tunables;
-		if (t && t->use_sched_load) {
+		if (t && t->use_sched_load)
 			t->timer_rate = val_round;
-			t->prev_timer_rate = val_round;
-		}
 	}
 	set_window_helper(tunables);
-
-	return count;
-}
-
-static ssize_t show_sleep_timer_rate(struct cpufreq_interactive_tunables
-		*tunables, char *buf)
-{
-	return sprintf(buf, "%lu\n", tunables->sleep_timer_rate);
-}
-
-static ssize_t store_sleep_timer_rate(struct cpufreq_interactive_tunables
-		*tunables, const char *buf, size_t count)
-{
-	int ret;
-	unsigned long val, val_round;
-
-	ret = kstrtoul(buf, 0, &val);
-	if (ret < 0)
-		return ret;
-
-	val_round = jiffies_to_usecs(usecs_to_jiffies(val));
-	if (val != val_round)
-		pr_warn("sleep_timer_rate not aligned to jiffy. Rounded up to %lu\n",
-			val_round);
-
-	tunables->sleep_timer_rate = val_round;
 
 	return count;
 }
@@ -1523,7 +1452,6 @@ show_store_gov_pol_sys(hispeed_freq);
 show_store_gov_pol_sys(go_hispeed_load);
 show_store_gov_pol_sys(min_sample_time);
 show_store_gov_pol_sys(timer_rate);
-show_store_gov_pol_sys(sleep_timer_rate);
 show_store_gov_pol_sys(timer_slack);
 show_store_gov_pol_sys(boost);
 store_gov_pol_sys(boostpulse);
@@ -1555,7 +1483,6 @@ gov_sys_pol_attr_rw(hispeed_freq);
 gov_sys_pol_attr_rw(go_hispeed_load);
 gov_sys_pol_attr_rw(min_sample_time);
 gov_sys_pol_attr_rw(timer_rate);
-gov_sys_pol_attr_rw(sleep_timer_rate);
 gov_sys_pol_attr_rw(timer_slack);
 gov_sys_pol_attr_rw(boost);
 gov_sys_pol_attr_rw(boostpulse_duration);
@@ -1582,7 +1509,6 @@ static struct attribute *interactive_attributes_gov_sys[] = {
 	&go_hispeed_load_gov_sys.attr,
 	&min_sample_time_gov_sys.attr,
 	&timer_rate_gov_sys.attr,
-	&sleep_timer_rate_gov_sys.attr,
 	&timer_slack_gov_sys.attr,
 	&boost_gov_sys.attr,
 	&boostpulse_gov_sys.attr,
@@ -1611,7 +1537,6 @@ static struct attribute *interactive_attributes_gov_pol[] = {
 	&go_hispeed_load_gov_pol.attr,
 	&min_sample_time_gov_pol.attr,
 	&timer_rate_gov_pol.attr,
-	&sleep_timer_rate_gov_pol.attr,
 	&timer_slack_gov_pol.attr,
 	&boost_gov_pol.attr,
 	&boostpulse_gov_pol.attr,
@@ -1661,8 +1586,6 @@ static struct cpufreq_interactive_tunables *alloc_tunable(
 	tunables->ntarget_loads = ARRAY_SIZE(default_target_loads);
 	tunables->min_sample_time = DEFAULT_MIN_SAMPLE_TIME;
 	tunables->timer_rate = DEFAULT_TIMER_RATE;
-	tunables->prev_timer_rate = DEFAULT_TIMER_RATE;
-	tunables->sleep_timer_rate = SCREEN_OFF_TIMER_RATE;
 	tunables->boostpulse_duration_val = DEFAULT_MIN_SAMPLE_TIME;
 	tunables->timer_slack_val = DEFAULT_TIMER_SLACK;
 
@@ -1936,11 +1859,6 @@ static int __init cpufreq_interactive_init(void)
 	/* NB: wake up so the thread does not look hung to the freezer */
 	wake_up_process_no_notif(speedchange_task);
 
-	/* register callback for screen on/off notifier */
-	fb_notif.notifier_call = fb_notifier_callback;
-	if (fb_register_client(&fb_notif) != 0)
-		pr_err("%s: Failed to register fb callback\n", __func__);
-
 	ret = cpufreq_register_governor(&cpufreq_gov_interactive);
 	if (ret) {
 		kthread_stop(speedchange_task);
@@ -1962,9 +1880,6 @@ static void __exit cpufreq_interactive_exit(void)
 	cpufreq_unregister_governor(&cpufreq_gov_interactive);
 	kthread_stop(speedchange_task);
 	put_task_struct(speedchange_task);
-
-	/* unregister screen notifier */
-	fb_unregister_client(&fb_notif);
 
 	for_each_possible_cpu(cpu)
 		free_policyinfo(cpu);
