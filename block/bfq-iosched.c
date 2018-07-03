@@ -3855,7 +3855,7 @@ static int bfq_init_queue(struct request_queue *q, struct elevator_type *e)
 	bfqd->bfq_fifo_expire[1] = bfq_fifo_expire[1];
 	bfqd->bfq_back_max = bfq_back_max;
 	bfqd->bfq_back_penalty = bfq_back_penalty;
-	bfqd->bfq_slice_idle = bfq_slice_idle;
+	bfqd->bfq_slice_idle = blk_queue_nonrot(q) ? 0 : bfq_slice_idle;
 	bfqd->bfq_class_idle_last_service = 0;
 	bfqd->bfq_max_budget_async_rq = bfq_max_budget_async_rq;
 	bfqd->bfq_timeout[BLK_RW_ASYNC] = bfq_timeout_async;
@@ -3895,6 +3895,18 @@ static int bfq_init_queue(struct request_queue *q, struct elevator_type *e)
 	bfqd->device_speed = BFQ_BFQD_FAST;
 
 	return 0;
+}
+
+static void bfq_registered_queue(struct request_queue *q)
+{
+	struct elevator_queue *eq = q->elevator;
+	struct bfq_data *bfqd = eq->elevator_data;
+
+	/*
+	 * Default to IOPS mode with no idling for SSDs
+	 */
+	if (blk_queue_nonrot(q))
+		bfqd->bfq_slice_idle = 0;
 }
 
 static void bfq_slab_kill(void)
@@ -4160,6 +4172,7 @@ static struct elevator_type iosched_bfq = {
 		.elevator_may_queue_fn =	bfq_may_queue,
 		.elevator_init_fn =		bfq_init_queue,
 		.elevator_exit_fn =		bfq_exit_queue,
+		.elevator_registered_fn =	bfq_registered_queue,
 	},
 	.icq_size =		sizeof(struct bfq_io_cq),
 	.icq_align =		__alignof__(struct bfq_io_cq),
