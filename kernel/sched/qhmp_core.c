@@ -1323,7 +1323,7 @@ static int __init set_sched_ravg_window(char *str)
 early_param("sched_ravg_window", set_sched_ravg_window);
 
 static ktime_t ktime_last;
-static bool sched_ktime_suspended;
+static __read_mostly bool sched_ktime_suspended;
 
 u64 sched_ktime_clock(void)
 {
