@@ -151,7 +151,7 @@ struct smbchg_chip {
 	bool				cfg_override_usb_current;
 	u8				original_usbin_allowance;
 	struct parallel_usb_cfg		parallel;
-	struct delayed_work		parallel_en_work;
+	struct work_struct		parallel_en_work;
 	struct dentry			*debug_root;
 	struct smbchg_version_tables	tables;
 
@@ -2512,8 +2512,7 @@ static bool smbchg_is_parallel_usb_ok(struct smbchg_chip *chip,
 static void smbchg_parallel_usb_en_work(struct work_struct *work)
 {
 	struct smbchg_chip *chip = container_of(work,
-				struct smbchg_chip,
-				parallel_en_work.work);
+				struct smbchg_chip, parallel_en_work);
 	int previous_aicl_ma, total_current_ma, aicl_ma;
 	bool in_progress;
 	int rc, tries = 3;
@@ -2581,7 +2580,7 @@ static void smbchg_parallel_usb_en_work(struct work_struct *work)
 
 recheck:
 	chip->parallel.parallel_en_in_progress = false;
-	schedule_delayed_work(&chip->parallel_en_work, 0);
+	schedule_work(&chip->parallel_en_work);
 }
 
 static void smbchg_parallel_usb_check_ok(struct smbchg_chip *chip)
@@ -2597,7 +2596,7 @@ static void smbchg_parallel_usb_check_ok(struct smbchg_chip *chip)
 	}
 
 	smbchg_stay_awake(chip, PM_PARALLEL_CHECK);
-	schedule_delayed_work(&chip->parallel_en_work, 0);
+	schedule_work(&chip->parallel_en_work);
 }
 
 static int charging_suspend_vote_cb(struct votable *votable, void *data,
@@ -8576,8 +8575,7 @@ static int smbchg_probe(struct spmi_device *spmi)
 	}
 
 	INIT_WORK(&chip->usb_set_online_work, smbchg_usb_update_online_work);
-	INIT_DELAYED_WORK(&chip->parallel_en_work,
-			smbchg_parallel_usb_en_work);
+	INIT_WORK(&chip->parallel_en_work, smbchg_parallel_usb_en_work);
 	INIT_DELAYED_WORK(&chip->vfloat_adjust_work, smbchg_vfloat_adjust_work);
 	INIT_DELAYED_WORK(&chip->hvdcp_det_work, smbchg_hvdcp_det_work);
 	init_completion(&chip->src_det_lowered);
