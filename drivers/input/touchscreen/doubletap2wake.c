@@ -30,6 +30,7 @@
 #include <linux/workqueue.h>
 #include <linux/input.h>
 #include <linux/hrtimer.h>
+#include <linux/display_state.h>
 #include <asm-generic/cputime.h>
 
 /* uncomment since no touchscreen defines android touch, do that here */
@@ -65,16 +66,21 @@ MODULE_LICENSE("GPLv2");
 #define HALF_MAX_Y		750
 #define HALF_MIN_Y		500
 
+#define DT2W_OFF 0
+#define DT2W_ON 1
+#define DT2W_FS 2
+
 /* Resources */
 int dt2w_switch = DT2W_DEFAULT;
+bool dt2w_scr_suspended = false;
 static cputime64_t tap_time_pre = 0;
 static int touch_x = 0, touch_y = 0, touch_nr = 0, x_pre = 0, y_pre = 0;
 static bool touch_x_called = false, touch_y_called = false, touch_cnt = true;
 static bool exec_count = true;
-static struct input_dev *doubletap2wake_pwrdev;
+static struct input_dev * doubletap2wake_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
+static struct workqueue_struct *dt2w_input_wq;
 static struct work_struct dt2w_input_work;
-static struct work_struct doubletap2wake_presspwr_work;
 
 /* Read cmdline for dt2w */
 static int __init read_dt2w_cmdline(char *dt2w)
@@ -106,7 +112,7 @@ static void doubletap2wake_reset(void) {
 }
 
 /* PowerKey work func */
-static void doubletap2wake_presspwr(struct work_struct *work) {
+static void doubletap2wake_presspwr(struct work_struct * doubletap2wake_presspwr_work) {
 	if (!mutex_trylock(&pwrkeyworklock))
                 return;
 	input_event(doubletap2wake_pwrdev, EV_KEY, KEY_POWER, 1);
@@ -118,10 +124,12 @@ static void doubletap2wake_presspwr(struct work_struct *work) {
         mutex_unlock(&pwrkeyworklock);
 	return;
 }
+static DECLARE_WORK(doubletap2wake_presspwr_work, doubletap2wake_presspwr);
 
 /* PowerKey trigger */
 static void doubletap2wake_pwrtrigger(void) {
 	schedule_work(&doubletap2wake_presspwr_work);
+        return;
 }
 
 /* unsigned */
@@ -149,8 +157,7 @@ static void detect_doubletap2wake(int x, int y, bool st)
         pr_info(LOGTAG"x,y(%4d,%4d) single:%s\n",
                 x, y, (single_touch) ? "true" : "false");
 #endif
-
-	if (single_touch && exec_count && touch_cnt) {
+	if ((single_touch) && (dt2w_switch > 0) && (exec_count) && (touch_cnt)) {
 		
 		if ((ktime_to_ms(ktime_get())-tap_time_pre) >= DT2W_TIME)
 			doubletap2wake_reset();
@@ -182,11 +189,20 @@ static void detect_doubletap2wake(int x, int y, bool st)
 				new_touch(x, y);
 			}
 		}
+		/*if ((touch_nr > 1)) {
+			pr_info(LOGTAG"ON\n");
+			exec_count = false;
+			doubletap2wake_pwrtrigger();
+			doubletap2wake_reset();
+		}*/
 	}
 }
 
 static void dt2w_input_callback(struct work_struct *unused) {
+
 	detect_doubletap2wake(touch_x, touch_y, true);
+
+	return;
 }
 
 static void dt2w_input_event(struct input_handle *handle, unsigned int type,
@@ -198,7 +214,7 @@ static void dt2w_input_event(struct input_handle *handle, unsigned int type,
 		(code==ABS_MT_TRACKING_ID) ? "ID" :
 		"undef"), code, value);
 #endif
-	if (dt2w_scr_on() || !dt2w_switch)
+	if (is_display_on())
 		return;
 
 	if (code == ABS_MT_SLOT) {
@@ -224,7 +240,7 @@ static void dt2w_input_event(struct input_handle *handle, unsigned int type,
 	if ((touch_x_called || touch_y_called) && touch_cnt)  {
 		touch_x_called = false;
 		touch_y_called = false;
-		schedule_work(&dt2w_input_work);
+		queue_work(dt2w_input_wq, &dt2w_input_work);
 	}
 }
 
@@ -233,8 +249,9 @@ static int input_dev_filter(struct input_dev *dev) {
 		strstr(dev->name, "synaptics_dsx_i2c") ||
 		strstr(dev->name, "ft5x06_720p")) {
 		return 0;
+	} else {
+		return 1;
 	}
-	return 1;
 }
 
 static int dt2w_input_connect(struct input_handler *handler,
@@ -270,11 +287,9 @@ err2:
 }
 
 static void dt2w_input_disconnect(struct input_handle *handle) {
-	if (handle) {
-		input_close_device(handle);
-		input_unregister_handle(handle);
-		kfree(handle);
-	}
+	input_close_device(handle);
+	input_unregister_handle(handle);
+	kfree(handle);
 }
 
 static const struct input_device_id dt2w_ids[] = {
@@ -306,11 +321,35 @@ static ssize_t dt2w_doubletap2wake_show(struct device *dev,
 static ssize_t dt2w_doubletap2wake_dump(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-	if (buf[0] >= '0' && buf[0] <= '2' && buf[1] == '\n')
-                if (dt2w_switch != buf[0] - '0')
-		        dt2w_switch = buf[0] - '0';
+       unsigned int new_dt2w_switch;
+       if (!sscanf(buf, "%du", &new_dt2w_switch))
+		return -EINVAL;
 
-	return count;
+	if (new_dt2w_switch == dt2w_switch)
+		return count;
+
+	switch (new_dt2w_switch) {
+		case DT2W_OFF :
+		case DT2W_ON :
+		case DT2W_FS :
+			if (dt2w_scr_suspended) {
+				pr_info("[cmdline_dt2w]: DoubleTap2Wake isn't changed because the screen is off.'\n");
+				return count;
+			}
+			dt2w_switch = new_dt2w_switch;
+			/* through 'adb shell' or by other means, if the toggle
+			 * is done several times, 0-to-1, 1-to-0, we need to
+			 * inform the toggle correctly
+			 */
+			pr_info("[dump_dt2w]: DoubleTap2Wake toggled. | "
+					"dt2w='%d' \n", dt2w_switch);
+			return count;
+		default:
+			return -EINVAL;
+	}
+
+	/* We should never get here */
+	return -EINVAL;
 }
 
 static DEVICE_ATTR(doubletap2wake, (S_IWUSR|S_IRUGO),
@@ -364,9 +403,12 @@ static int __init doubletap2wake_init(void)
 		goto err_input_dev;
 	}
 
+	dt2w_input_wq = alloc_workqueue("dt2wiwq", WQ_HIGHPRI | WQ_UNBOUND, 0);
+	if (!dt2w_input_wq) {
+		pr_err("%s: Failed to create dt2wiwq workqueue\n", __func__);
+		return -ENOMEM;
+	}
 	INIT_WORK(&dt2w_input_work, dt2w_input_callback);
-	INIT_WORK(&doubletap2wake_presspwr_work, doubletap2wake_presspwr);
-
 	rc = input_register_handler(&dt2w_input_handler);
 	if (rc)
 		pr_err("%s: Failed to register dt2w_input_handler\n", __func__);
@@ -401,6 +443,7 @@ static void __exit doubletap2wake_exit(void)
 	kobject_del(android_touch_kobj);
 #endif
 	input_unregister_handler(&dt2w_input_handler);
+	destroy_workqueue(dt2w_input_wq);
 	input_unregister_device(doubletap2wake_pwrdev);
 	input_free_device(doubletap2wake_pwrdev);
 	return;
@@ -408,3 +451,4 @@ static void __exit doubletap2wake_exit(void)
 
 late_initcall(doubletap2wake_init);
 module_exit(doubletap2wake_exit);
+
