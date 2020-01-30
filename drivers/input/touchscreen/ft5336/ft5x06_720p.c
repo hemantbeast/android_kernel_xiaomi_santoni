@@ -357,7 +357,7 @@ static void ft5x06_update_fw_ver(struct ft5x06_ts_data *data)
 			data->fw_ver[0], data->fw_ver[1], data->fw_ver[2]);
 }
 
-static irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
+static __always_inline irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
 {
 	struct ft5x06_ts_data *data = dev_id;
 	struct input_dev *ip_dev;
