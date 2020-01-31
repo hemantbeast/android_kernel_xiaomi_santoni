@@ -234,7 +234,7 @@ static int focal_i2c_Write(unsigned char *writebuf, int writelen)
 }
 #endif
 
-static int ft5x06_i2c_read(struct i2c_client *client, char *writebuf,
+static __always_inline int ft5x06_i2c_read(struct i2c_client *client, char *writebuf,
 		int writelen, char *readbuf, int readlen)
 {
 	int ret;
@@ -255,8 +255,6 @@ static int ft5x06_i2c_read(struct i2c_client *client, char *writebuf,
 			},
 		};
 		ret = i2c_transfer(client->adapter, msgs, 2);
-		if (ret < 0)
-			dev_err(&client->dev, "%s: i2c read error.\n", __func__);
 	} else {
 		struct i2c_msg msgs[] = {
 			{
@@ -267,8 +265,6 @@ static int ft5x06_i2c_read(struct i2c_client *client, char *writebuf,
 			},
 		};
 		ret = i2c_transfer(client->adapter, msgs, 1);
-		if (ret < 0)
-			dev_err(&client->dev, "%s:i2c read error.\n", __func__);
 	}
 	return ret;
 }
