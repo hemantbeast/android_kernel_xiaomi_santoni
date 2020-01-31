@@ -367,7 +367,6 @@ static __always_inline irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
 	bool update_input = false;
 
 	if (!data) {
-		CTP_ERROR("%s: Invalid data\n", __func__);
 		return IRQ_HANDLED;
 	}
 
@@ -395,7 +394,6 @@ static __always_inline irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
 	rc = ft5x06_i2c_read(data->client, &reg, 1,
 			buf, data->tch_data_len);
 	if (rc < 0) {
-		dev_err(&data->client->dev, "%s: read data fail\n", __func__);
 		return IRQ_HANDLED;
 	}
 
